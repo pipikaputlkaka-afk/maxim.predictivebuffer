@@ -8,27 +8,20 @@ on:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - name: Windows
-            os: windows-latest
-
-    name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
+    name: Windows
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Build the mod
         uses: geode-sdk/build-geode-mod@main
+        id: build
         with:
-          combine: true
-          target: ${{ matrix.config.target }}
+          sdk: nightly
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: maxim-predictivebuffer
-          path: ./build/*.geode
+          path: ${{ steps.build.outputs.build-output }}
