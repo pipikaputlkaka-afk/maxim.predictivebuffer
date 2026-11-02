@@ -1,4 +1,4 @@
-#include <Geode/Geode.hpp>
+#include <Geode/modify/CCKeyboardDispatcher.hpp>#include <Geode/Geode.hpp>
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/CCKeyboardDispatcher.hpp>
 
@@ -117,7 +117,7 @@ class $modify(PBPlayer, PlayerObject) {
         f->ticksLeft--;
 
         // Player is touching an orb: fire the buffered click now.
-        if (m_touchingRings && !m_touchingRings->empty()) {
+        if (m_touchingRings && m_touchingRings->count() > 0) {
             f->firing = true;
             f->ticksLeft = 0;
             PlayerObject::releaseButton(PlayerButton::Jump);
