@@ -1,0 +1,35 @@
+{
+	"geode": "4.6.0",
+	"gd": {
+		"win": "2.2081"
+	},
+	"version": "v1.0.0",
+	"id": "maxim.predictivebuffer",
+	"name": "Predictive Buffer",
+	"developer": "Maxim",
+	"description": "Buffers clicks for a configurable number of physics ticks so they fire the moment you touch an orb. F6 cycles the buffer window (max 120 ticks).",
+	"settings": {
+		"enabled": {
+			"type": "bool",
+			"name": "Enabled",
+			"description": "Master switch for the predictive buffer.",
+			"default": true
+		},
+		"tick-window": {
+			"type": "int",
+			"name": "Buffer window (ticks)",
+			"description": "How many physics ticks a click stays buffered. Press F6 in-game to cycle through presets (1, 5, 10, 20, 30, 60, 90, 120).",
+			"default": 10,
+			"min": 1,
+			"max": 120
+		},
+		"buffer-cube": { "type": "bool", "name": "Buffer: Cube", "default": true },
+		"buffer-ship": { "type": "bool", "name": "Buffer: Ship", "default": true },
+		"buffer-ball": { "type": "bool", "name": "Buffer: Ball", "default": true },
+		"buffer-ufo": { "type": "bool", "name": "Buffer: UFO", "default": true },
+		"buffer-wave": { "type": "bool", "name": "Buffer: Wave", "default": true },
+		"buffer-robot": { "type": "bool", "name": "Buffer: Robot", "default": true },
+		"buffer-spider": { "type": "bool", "name": "Buffer: Spider", "default": true },
+		"buffer-swing": { "type": "bool", "name": "Buffer: Swing", "default": true }
+	}
+}
