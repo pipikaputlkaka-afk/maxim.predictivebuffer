@@ -1,5 +1,5 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/PlayerObject.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/CCScheduler.hpp>
 
 #ifdef GEODE_IS_WINDOWS
@@ -18,6 +18,8 @@ static constexpr int PRESETS[] = {1, 5, 10, 20, 30, 60, 90, 120, 240, 480};
 static char const* MODES[] = {"cube", "ship", "ball", "ufo", "wave", "robot", "spider", "swing"};
 static constexpr int MODE_COUNT = 8;
 static int g_selected = 0;
+
+static constexpr int JUMP_BUTTON = 1;
 
 static void say(std::string const& msg) {
     log::info("{}", msg);
@@ -142,67 +144,71 @@ class $modify(PBScheduler, CCScheduler) {
     }
 };
 
-class $modify(PBPlayer, PlayerObject) {
+class $modify(PBLayer, GJBaseGameLayer) {
     struct Fields {
-        int ticksLeft = 0;
-        bool held = false;
+        int ticksLeft[2] = {0, 0};
+        bool held[2] = {false, false};
         bool firing = false;
     };
 
-    bool pushButton(PlayerButton btn) {
+    // Every click in the game goes through here.
+    void handleButton(bool down, int button, bool isPlayer1) {
         auto f = m_fields.self();
-        if (btn == PlayerButton::Jump && !f->firing) {
-            std::string mode = modeName(this);
-            if (isEnabled() && modeOn(mode)) {
-                // Would this click do something right now?
-                bool actsNow = actReason(this) != nullptr;
-                f->held = true;
-                if (actsNow) {
-                    f->ticksLeft = 0;
+        if (button == JUMP_BUTTON && !f->firing) {
+            int i = isPlayer1 ? 0 : 1;
+            PlayerObject* p = isPlayer1 ? m_player1 : m_player2;
+            if (!down) {
+                f->held[i] = false;
+            } else if (p) {
+                std::string mode = modeName(p);
+                if (isEnabled() && modeOn(mode)) {
+                    char const* reason = actReason(p);
+                    f->held[i] = true;
+                    say("Jump press (" + mode + "): ground=" + (p->m_isOnGround ? "yes" : "no") +
+                        ", orb=" + (touchingRing(p) ? "yes" : "no") +
+                        " -> " + (reason ? "acts now" : "BUFFERED " + std::to_string(windowFor(mode)) + " ticks"));
+                    f->ticksLeft[i] = reason ? 0 : windowFor(mode);
                 } else {
-                    f->ticksLeft = windowFor(mode);
-                    say("Click buffered (" + mode + ", " + std::to_string(f->ticksLeft) + " ticks)");
+                    f->ticksLeft[i] = 0;
                 }
-            } else {
-                f->ticksLeft = 0;
             }
         }
-        return PlayerObject::pushButton(btn);
+        GJBaseGameLayer::handleButton(down, button, isPlayer1);
     }
 
-    bool releaseButton(PlayerButton btn) {
-        if (btn == PlayerButton::Jump) {
-            m_fields->held = false;
-        }
-        return PlayerObject::releaseButton(btn);
-    }
-
-    // Runs once per physics tick.
-    void update(float dt) {
-        PlayerObject::update(dt);
+    // Runs every physics tick.
+    void processCommands(float dt, bool isHalfTick, bool isLastTick) {
+        GJBaseGameLayer::processCommands(dt, isHalfTick, isLastTick);
 
         auto f = m_fields.self();
-        if (f->ticksLeft <= 0) return;
-
-        std::string mode = modeName(this);
-        if (!isEnabled() || !modeOn(mode)) {
-            f->ticksLeft = 0;
-            return;
-        }
-
-        f->ticksLeft--;
-
-        char const* reason = actReason(this);
-        if (reason) {
-            f->firing = true;
-            f->ticksLeft = 0;
-            PlayerObject::releaseButton(PlayerButton::Jump);
-            PlayerObject::pushButton(PlayerButton::Jump);
-            if (!f->held) {
-                PlayerObject::releaseButton(PlayerButton::Jump);
+        for (int i = 0; i < 2; i++) {
+            if (f->ticksLeft[i] <= 0) continue;
+            PlayerObject* p = (i == 0) ? m_player1 : m_player2;
+            if (!p) {
+                f->ticksLeft[i] = 0;
+                continue;
             }
-            f->firing = false;
-            say("Buffered click fired (" + mode + ", " + reason + ")");
+            std::string mode = modeName(p);
+            if (!isEnabled() || !modeOn(mode)) {
+                f->ticksLeft[i] = 0;
+                continue;
+            }
+
+            f->ticksLeft[i]--;
+
+            char const* reason = actReason(p);
+            if (reason) {
+                f->ticksLeft[i] = 0;
+                f->firing = true;
+                bool isP1 = (i == 0);
+                GJBaseGameLayer::handleButton(false, JUMP_BUTTON, isP1);
+                GJBaseGameLayer::handleButton(true, JUMP_BUTTON, isP1);
+                if (!f->held[i]) {
+                    GJBaseGameLayer::handleButton(false, JUMP_BUTTON, isP1);
+                }
+                f->firing = false;
+                say("Buffered click FIRED (" + mode + ", " + reason + ")");
+            }
         }
     }
 };
