@@ -1,6 +1,6 @@
-#include <Geode/modify/CCKeyboardDispatcher.hpp>#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/modify/PlayerObject.hpp>
-#include <Geode/modify/CCKeyboardDispatcher.hpp>
+#include <Geode/modify/CCScheduler.hpp>
 
 #ifdef GEODE_IS_WINDOWS
 #include <Windows.h>
@@ -11,8 +11,9 @@
 
 using namespace geode::prelude;
 
-// F6 cycles through these buffer windows (in physics ticks). Max is 120.
-static constexpr int PRESETS[] = {1, 5, 10, 20, 30, 60, 90, 120};
+// F6 cycles through these buffer windows (in physics ticks).
+// Every value must be <= the "max" of tick-window in mod.json.
+static constexpr int PRESETS[] = {1, 5, 10, 20, 30, 60, 90, 120, 240, 480};
 
 static void say(std::string const& msg) {
     log::info("{}", msg);
@@ -56,6 +57,22 @@ static void cycleWindow() {
     say("Buffer window -> " + std::to_string(next) + " ticks");
 }
 
+// Checks F6 every frame, only while the game window is focused.
+static void pollF6() {
+#ifdef GEODE_IS_WINDOWS
+    static bool wasDown = false;
+    HWND fg = GetForegroundWindow();
+    DWORD pid = 0;
+    if (fg) GetWindowThreadProcessId(fg, &pid);
+    bool focused = (pid == GetCurrentProcessId());
+    bool down = focused && ((GetAsyncKeyState(VK_F6) & 0x8000) != 0);
+    if (down && !wasDown) {
+        cycleWindow();
+    }
+    wasDown = down;
+#endif
+}
+
 // Gamemode on/off switches live in the mod settings (buffer-*).
 static bool gamemodeOn(PlayerObject* p) {
     char const* key = "buffer-cube";
@@ -69,13 +86,10 @@ static bool gamemodeOn(PlayerObject* p) {
     return Mod::get()->getSettingValue<bool>(key);
 }
 
-class $modify(PBKeyboard, CCKeyboardDispatcher) {
-    // NOTE: older Geode versions have no timestamp parameter here.
-    bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool repeat, double timestamp) {
-        if (down && !repeat && key == KEY_F6) {
-            cycleWindow();
-        }
-        return CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, repeat, timestamp);
+class $modify(PBScheduler, CCScheduler) {
+    void update(float dt) {
+        pollF6();
+        CCScheduler::update(dt);
     }
 };
 
