@@ -1,7 +1,7 @@
 {
-	"geode": "6.0.0-alpha.1",
+	"geode": "5.11.2",
 	"gd": {
-		"win": "2.2091"
+		"win": "2.2081"
 	},
 	"version": "v1.0.0",
 	"id": "maxim.predictivebuffer",
