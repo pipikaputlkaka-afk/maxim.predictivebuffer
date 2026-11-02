@@ -11,9 +11,13 @@
 
 using namespace geode::prelude;
 
-// F6 cycles through these buffer windows (in physics ticks).
-// Every value must be <= the "max" of tick-window in mod.json.
+// F6 cycles the selected gamemode through these buffer windows (in physics ticks).
 static constexpr int PRESETS[] = {1, 5, 10, 20, 30, 60, 90, 120, 240, 480};
+
+// F7 cycles through these gamemodes.
+static char const* MODES[] = {"cube", "ship", "ball", "ufo", "wave", "robot", "spider", "swing"};
+static constexpr int MODE_COUNT = 8;
+static int g_selected = 0;
 
 static void say(std::string const& msg) {
     log::info("{}", msg);
@@ -25,8 +29,23 @@ static bool isEnabled() {
     return Mod::get()->getSettingValue<bool>("enabled");
 }
 
-static int getWindow() {
+// Default window for gamemodes that have no value saved yet.
+static int defaultWindow() {
     return static_cast<int>(Mod::get()->getSettingValue<int64_t>("tick-window"));
+}
+
+static int windowFor(std::string const& mode) {
+    return static_cast<int>(
+        Mod::get()->getSavedValue<int64_t>("window-" + mode, static_cast<int64_t>(defaultWindow()))
+    );
+}
+
+static bool modeOn(std::string const& mode) {
+    return Mod::get()->getSettingValue<bool>("buffer-" + mode);
+}
+
+static void printStatus(std::string const& mode) {
+    say("Selected: " + mode + " | window: " + std::to_string(windowFor(mode)) + " ticks | " + (modeOn(mode) ? "ON" : "OFF"));
 }
 
 // Opens the separate console window when GD starts.
@@ -40,12 +59,18 @@ $on_mod(Loaded) {
         SetConsoleTitleA("Predictive Buffer");
     }
 #endif
-    say("Loaded. Press F6 in-game to cycle the buffer window.");
-    say("Current window: " + std::to_string(getWindow()) + " ticks, enabled: " + (isEnabled() ? "yes" : "no"));
+    say("Loaded. F7 = choose gamemode, F6 = change its tick window.");
+    say(std::string("Master switch: ") + (isEnabled() ? "ON" : "OFF"));
+    for (int i = 0; i < MODE_COUNT; i++) {
+        std::string m = MODES[i];
+        say("  " + m + ": " + std::to_string(windowFor(m)) + " ticks, " + (modeOn(m) ? "ON" : "OFF"));
+    }
+    printStatus(MODES[g_selected]);
 }
 
 static void cycleWindow() {
-    int cur = getWindow();
+    std::string mode = MODES[g_selected];
+    int cur = windowFor(mode);
     int next = PRESETS[0];
     for (int p : PRESETS) {
         if (p > cur) {
@@ -53,42 +78,66 @@ static void cycleWindow() {
             break;
         }
     }
-    Mod::get()->setSettingValue<int64_t>("tick-window", next);
-    say("Buffer window -> " + std::to_string(next) + " ticks");
+    Mod::get()->setSavedValue<int64_t>("window-" + mode, static_cast<int64_t>(next));
+    say(mode + " window -> " + std::to_string(next) + " ticks");
 }
 
-// Checks F6 every frame, only while the game window is focused.
-static void pollF6() {
+static void selectNextMode() {
+    g_selected = (g_selected + 1) % MODE_COUNT;
+    printStatus(MODES[g_selected]);
+}
+
+// Checks the keys every frame, only while the game window is focused.
+static void pollKeys() {
 #ifdef GEODE_IS_WINDOWS
-    static bool wasDown = false;
+    static bool w6 = false, w7 = false;
     HWND fg = GetForegroundWindow();
     DWORD pid = 0;
     if (fg) GetWindowThreadProcessId(fg, &pid);
     bool focused = (pid == GetCurrentProcessId());
-    bool down = focused && ((GetAsyncKeyState(VK_F6) & 0x8000) != 0);
-    if (down && !wasDown) {
-        cycleWindow();
-    }
-    wasDown = down;
+
+    auto edge = [&](int vk, bool& was) {
+        bool down = focused && ((GetAsyncKeyState(vk) & 0x8000) != 0);
+        bool pressed = down && !was;
+        was = down;
+        return pressed;
+    };
+
+    if (edge(VK_F6, w6)) cycleWindow();
+    if (edge(VK_F7, w7)) selectNextMode();
 #endif
 }
 
-// Gamemode on/off switches live in the mod settings (buffer-*).
-static bool gamemodeOn(PlayerObject* p) {
-    char const* key = "buffer-cube";
-    if (p->m_isShip) key = "buffer-ship";
-    else if (p->m_isBird) key = "buffer-ufo";
-    else if (p->m_isBall) key = "buffer-ball";
-    else if (p->m_isDart) key = "buffer-wave";
-    else if (p->m_isRobot) key = "buffer-robot";
-    else if (p->m_isSpider) key = "buffer-spider";
-    else if (p->m_isSwing) key = "buffer-swing";
-    return Mod::get()->getSettingValue<bool>(key);
+static char const* modeName(PlayerObject* p) {
+    if (p->m_isShip) return "ship";
+    if (p->m_isBird) return "ufo";
+    if (p->m_isBall) return "ball";
+    if (p->m_isDart) return "wave";
+    if (p->m_isRobot) return "robot";
+    if (p->m_isSpider) return "spider";
+    if (p->m_isSwing) return "swing";
+    return "cube";
+}
+
+static bool touchingRing(PlayerObject* p) {
+    return p->m_touchingRings && p->m_touchingRings->count() > 0;
+}
+
+// Modes that jump off the ground.
+static bool groundMode(PlayerObject* p) {
+    return !(p->m_isShip || p->m_isBird || p->m_isDart || p->m_isSwing);
+}
+
+// Returns why a click would take effect right now, or nullptr if it wouldn't.
+static char const* actReason(PlayerObject* p) {
+    if (touchingRing(p)) return "orb";
+    if (groundMode(p) && p->m_isOnGround) return "landing";
+    return nullptr;
 }
 
 class $modify(PBScheduler, CCScheduler) {
     void update(float dt) {
-        pollF6();
+        pollKeys();
         CCScheduler::update(dt);
     }
 };
@@ -101,13 +150,24 @@ class $modify(PBPlayer, PlayerObject) {
     };
 
     bool pushButton(PlayerButton btn) {
-        bool res = PlayerObject::pushButton(btn);
         auto f = m_fields.self();
-        if (btn == PlayerButton::Jump && !f->firing && isEnabled() && gamemodeOn(this)) {
-            f->ticksLeft = getWindow();
-            f->held = true;
+        if (btn == PlayerButton::Jump && !f->firing) {
+            std::string mode = modeName(this);
+            if (isEnabled() && modeOn(mode)) {
+                // Would this click do something right now?
+                bool actsNow = actReason(this) != nullptr;
+                f->held = true;
+                if (actsNow) {
+                    f->ticksLeft = 0;
+                } else {
+                    f->ticksLeft = windowFor(mode);
+                    say("Click buffered (" + mode + ", " + std::to_string(f->ticksLeft) + " ticks)");
+                }
+            } else {
+                f->ticksLeft = 0;
+            }
         }
-        return res;
+        return PlayerObject::pushButton(btn);
     }
 
     bool releaseButton(PlayerButton btn) {
@@ -123,15 +183,17 @@ class $modify(PBPlayer, PlayerObject) {
 
         auto f = m_fields.self();
         if (f->ticksLeft <= 0) return;
-        if (!isEnabled() || !gamemodeOn(this)) {
+
+        std::string mode = modeName(this);
+        if (!isEnabled() || !modeOn(mode)) {
             f->ticksLeft = 0;
             return;
         }
 
         f->ticksLeft--;
 
-        // Player is touching an orb: fire the buffered click now.
-        if (m_touchingRings && m_touchingRings->count() > 0) {
+        char const* reason = actReason(this);
+        if (reason) {
             f->firing = true;
             f->ticksLeft = 0;
             PlayerObject::releaseButton(PlayerButton::Jump);
@@ -140,7 +202,7 @@ class $modify(PBPlayer, PlayerObject) {
                 PlayerObject::releaseButton(PlayerButton::Jump);
             }
             f->firing = false;
-            say("Buffered click fired on orb");
+            say("Buffered click fired (" + mode + ", " + reason + ")");
         }
     }
 };
